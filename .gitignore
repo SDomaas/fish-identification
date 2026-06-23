@@ -160,3 +160,4 @@ output.png
 *.tfevents
 notebooks/reranker_comparison.png
 notebooks/viz_Abramis_brama_hdbscan.png
+*.pt
