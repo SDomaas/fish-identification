@@ -4,6 +4,9 @@
 # JSON files
 *.json
 
+# Model backups
+model_backups/
+
 # Hidden files and folders (except for .gitignore)
 .*
 !.gitignore
@@ -161,3 +164,5 @@ output.png
 notebooks/reranker_comparison.png
 notebooks/viz_Abramis_brama_hdbscan.png
 *.pt
+*.ts
+annotation_data_Seavision_COCO/

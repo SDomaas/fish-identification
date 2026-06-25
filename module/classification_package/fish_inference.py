@@ -292,10 +292,9 @@ class FishInferenceEngine:
             engine._natural_labels = model.natural_labels.to(device).long()
             logger.info(f"Loaded embedded centroids: {engine._natural_centroids.shape}")
         except AttributeError:
-            raise RuntimeError(
-                "Bundle does not contain natural centroids. "
-                "Export model with embedded centroids."
-            )
+            engine._natural_centroids = None
+            engine._natural_labels = None
+            logger.warning("Bundle does not contain natural centroids — natural_centroid method unavailable.")
 
         # ------------------------------------------------------------------
         # LOAD class mapping (optional)

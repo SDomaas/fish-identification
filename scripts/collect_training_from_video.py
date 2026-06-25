@@ -21,19 +21,21 @@ Selection of files - etter utsett
 find /data/P-Prosjekter/18200300_overvaking_av_laks_i_tanavassdraget/ARIS-data/2026/Anarjohka_video \
   -type f \
   -name "*.mp4" \
-  -newermt "2026-06-20" \
+  -newermt "2026-05-31" \
   > video_list.txt
 
 #per camera YOLO threshold 
 python scripts/collect_training_from_video.py \
     --videos $(cat video_list.txt) \
     --det-model model.pt \
-    --cls-bundle classification_model/model.pt \
+    --cls-model classification_model/model.ts \
+    --cls-gallery classification_model/local_gallery.pt \
+    --cls-method natural_centroid \
     --output /data/P-Prosjekter/18200300_overvaking_av_laks_i_tanavassdraget/ARIS-data/2026/Anarjohka_video/training_crops \
     --frame-interval 1.0 \
     --burst-seconds 3 \
-    --conf-threshold 0.5 \
-    --det-threshold 0.75 \
+    --conf-threshold 0.0 \
+    --det-threshold 0.35 \
     --top-k 3
 
 Tip: use --conf-threshold 0.0 to capture all detections regardless of classification
@@ -220,7 +222,8 @@ def parse_video_filename(video_path: Path) -> tuple[str | None, str | None]:
 # ---------------------------------------------------------------------------
 
 def process_video(video_path: Path, args, det_model, cls_engine,
-                  frames_dir: Path, detection_dir: Path, review_dir: Path, debug_dir: Path | None,
+                  frames_dir: Path, detection_dir: Path, review_dir: Path,
+                  debug_dir: Path | None,
                   annotation_records: list, manifest_rows: list,
                   ann_id_counter: list, camera_det_thresholds: dict = {}):
 
@@ -359,7 +362,7 @@ def process_video(video_path: Path, args, det_model, cls_engine,
             # --- Save crop into review/<species>/ ---
             species_safe = best.name.replace(" ", "_")
             species_dir = review_dir / species_safe
-            species_dir.mkdir(exist_ok=True)
+            species_dir.mkdir(parents=True, exist_ok=True)
             crop_filename = f"cam{camera_id}_{frame_dt_file}_fish{fish_idx:02d}_{best.accuracy:.2f}.png"
             cv2.imwrite(str(species_dir / crop_filename), bbox_crop_bgr)
             any_saved = True
@@ -502,7 +505,7 @@ def _process_frame(frame_idx, frame_bgr, fps, video_datetime, camera_id,
 
         species_safe = best.name.replace(" ", "_")
         species_dir = review_dir / species_safe
-        species_dir.mkdir(exist_ok=True)
+        species_dir.mkdir(parents=True, exist_ok=True)
         crop_filename = f"cam{camera_id}_{frame_dt_file}_fish{fish_idx:02d}_{best.accuracy:.2f}.png"
         cv2.imwrite(str(species_dir / crop_filename), bbox_crop_bgr)
         any_saved = True

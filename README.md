@@ -1,195 +1,183 @@
-# Fishial.ai - Fish Recognition Platform
+# Fish Identification — Norwegian River Monitoring
 
-[![Project Website](https://img.shields.io/badge/Website-Fishial.ai-blue.svg)](https://www.fishial.ai)
-[![Demo App](https://img.shields.io/badge/Demo-Web%20Application-green.svg)](https://portal.fishial.ai/search/by-fishial-recognition)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://choosealicense.com/licenses/mit/)
-[![Embedding Viewer](https://img.shields.io/badge/Viewer-3D%20Embedding%20Space-purple.svg)](https://YOUR_GITHUB_USERNAME.github.io/YOUR_REPO_NAME/)
-<a target="_blank" href="https://colab.research.google.com/drive/1nKJ0V1sBLgfNJaCTQmuqUV1ybrx1m7qI?usp=sharing">
-  <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/>
-</a>
+Pipeline for automated fish detection, species classification, and individual tracking from underwater camera footage. Deployed on rivers Karasjohka and Anarjohka (Tana watershed).
 
 ---
 
-This repository contains the official training and validation scripts for the **Fishial.ai** fish segmentation, detection, and classification models.
+## Overview
+
+The system uses two models in sequence:
+
+1. **YOLO detector** (`model.pt`) — detects fish bounding boxes in each frame
+2. **ArcFace classifier** (`classification_model/model.ts`) — identifies species using embedding similarity against a gallery
+
+Camera footage is ~7 fps colour video at 1080×1920 from fixed underwater cameras. The pipeline is iterative: collect crops → sort manually → retrain detector → rebuild gallery → repeat.
 
 ---
 
-## 🗺️ Interactive 3D Embedding Viewer
+## Quick Start
 
-> **[🔬 Open Embedding Space Explorer →](https://github.com/fishial/fish-identification/static/index.html)**
-
-An interactive browser-based tool to explore the classification model's embedding space in 3D. No installation required — runs entirely in the browser.
-
-**Features:**
-- Browse all **866 fish species** projected into 3D via UMAP
-- Select any species as a target and instantly see its **top-N nearest neighbours**
-- **Manually compare** up to 5 species side-by-side with similarity scores
-- Built with Plotly — fully rotatable, zoomable 3D scene
-
-> The viewer is generated from the latest DinoV2 + ViT model checkpoint and stores only the top-10 neighbours per centroid (~3 MB total).
-
----
-
-## 🚀 Getting Started
-
-The easiest way to get started is by using our Google Colab Notebook. It allows you to run segmentation and classification models directly in your browser, using Google's cloud infrastructure or your own local machine.
-
-* **[🚀 Open in Google Colab](https://colab.research.google.com/drive/1nKJ0V1sBLgfNJaCTQmuqUV1ybrx1m7qI?usp=sharing)**
-
----
-
-## 🛠️ Local Installation
-
-To run the scripts on your own machine, follow these steps.
-
-**1. Clone the repository:**
 ```bash
-git clone <repository-url>
-cd <repository-directory>
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
 ```
 
-**2. Install dependencies:**
+---
 
-Make sure you have Python 3.x installed.
+## Scripts
+
+### `scripts/collect_training_from_video.py`
+Extracts fish crops from video for retraining. Samples one frame per second by default; on detection, also processes all frames in a burst window around it.
+
 ```bash
-pip3 install -r requirements.txt
+python scripts/collect_training_from_video.py \
+    --videos $(cat video_list.txt) \
+    --det-model model.pt \
+    --cls-model classification_model/model.ts \
+    --cls-gallery classification_model/gallery_full_side.pt \
+    --cls-method natural_centroid \
+    --output /data/.../training_crops \
+    --frame-interval 1.0 \
+    --burst-seconds 3 \
+    --conf-threshold 0.0 \
+    --det-threshold 0.35 \
+    --top-k 3
 ```
 
-**3. Verify requirements:**
-- `python3 --version` should report Python 3.10 or newer.
-- Use the pinned dependencies in `requirements.txt` and recreate your virtual environment if you switch Python versions.
+**Key options:**
+| Flag | Default | Description |
+|---|---|---|
+| `--frame-interval` | 1.0 | Seconds between sampled frames |
+| `--burst-seconds` | 3 | Extra seconds to sample around each detection |
+| `--det-threshold` | 0.35 | YOLO confidence threshold |
+| `--conf-threshold` | 0.0 | Min species confidence to save crop |
+| `--top-k` | 3 | Number of top species predictions to record |
+| `--camera-det-threshold` | — | Per-camera override e.g. `1:0.5 3:0.4` |
+
+**Outputs:** `review/<species>/` (crops), `detection_frames/` (clean frames + YOLO labels), `frames/` (annotated), `annotation.json`, `manifest.csv`
 
 ---
 
-## ⚙️ How to Run Scripts
+### `scripts/track_fish.py`
+Tracks individual fish across frames using IoU matching. Saves a video clip and best-crop image per track.
 
-First, make the shell scripts executable:
 ```bash
-chmod +x segmentation.sh classification.sh object_detection.sh
+python scripts/track_fish.py \
+    --videos $(cat video_list.txt) \
+    --det-model model.pt \
+    --cls-model classification_model/model.ts \
+    --cls-gallery classification_model/gallery_full_side.pt \
+    --cls-method natural_centroid \
+    --output /data/.../track_output \
+    --det-threshold 0.35 \
+    --conf-threshold 0.0 \
+    --track-max-gap 15 \
+    --buffer-seconds 2.0
 ```
 
-### Segmentation
+**Key options:**
+| Flag | Default | Description |
+|---|---|---|
+| `--track-max-gap` | 15 | Frames a fish can disappear before track closes |
+| `--buffer-seconds` | 2.0 | Seconds of video padding before/after each track |
+| `--location` | auto | River name in output filenames (auto-detected from path) |
+
+**Outputs:** `<species>/<species>_<date>_<time>_cam<N>_<location>_t<NNNN>.mp4` + `.png`
+
+---
+
+### `scripts/build_species_gallery.py`
+Builds an ArcFace centroid gallery from manually sorted crop folders.
+
 ```bash
-./segmentation.sh -c <your_coco_file> -i <your_images_dir> -d <your_segmentation_ds_name> -s <your_save_dir>
+python scripts/build_species_gallery.py \
+    --review /data/.../species_library/review_full_side \
+    --model classification_model/model.ts \
+    --output classification_model/gallery_full_side.pt \
+    --min-crops 10
 ```
-  - `-c`: Path to your COCO annotations file.
-  - `-i`: Path to the directory containing your images.
-  - `-d`: Name for your segmentation dataset.
-  - `-s`: Directory where the trained model will be saved.
 
-### Classification
+The gallery is a `.pt` file with one centroid per species. Flip augmentation is applied by default for orientation invariance.
+
+---
+
+### `scripts/prepare_detector_dataset.py`
+Builds a YOLO train/val dataset from manually sorted `detection_frames/` folders. Fish frames use saved `.txt` labels; background frames get empty labels.
+
 ```bash
-./classification.sh -p <your_classif_images_dir> -i <your_classif_input_dir> -a <your_annotation_file> -n <your_classification_ds_name>
+python scripts/prepare_detector_dataset.py \
+    --detection-frames /data/.../training_crops/detection_frames \
+    --output /data/.../yolo_dataset \
+    --det-model model.pt
 ```
-  - `-p`: Path to the classification images directory.
-  - `-i`: Path to the classification input directory.
-  - `-a`: Path to your annotation file.
-  - `-n`: Name for your classification dataset.
 
-### Object Detection (YOLO)
-```bash
-./object_detection.sh -d <your_detection_ds> -o <your_yolo_output_dir> -n <num_classes> -y <data_yaml> -p <project_dir> -r <run_name>
+Supports multiple `--detection-frames` sources to combine data from different rivers.
+
+---
+
+### `scripts/mirror_sort_to_detection_frames.py`
+After manually sorting crops in `review/`, mirrors that sorting into `detection_frames/` (moves images and `.txt` label files to matching subfolders).
+
+---
+
+## Galleries
+
+| File | Species | Notes |
+|---|---|---|
+| `classification_model/gallery_full_side.pt` | 7 | Built from clean side-view crops — best quality |
+| `classification_model/gallery_partial.pt` | 8 | Includes Perca; partial/mixed views |
+| `classification_model/local_gallery.pt` | 8 | Earlier combined gallery |
+
+**Use `gallery_full_side.pt`** for production runs. Switch to `gallery_partial.pt` if Perca detection is needed.
+
+---
+
+## Species
+
+Currently in the gallery:
+- *Salmo salar* (Atlantic salmon)
+- *Salmo trutta* (Brown trout)
+- *Thymallus thymallus* (Grayling)
+- *Coregonus lavaretus* (Whitefish)
+- *Esox lucius* (Pike)
+- *Perca fluviatilis* (Perch) — partial gallery only
+- *Fiskand* (Merganser)
+- smolt/parr
+
+---
+
+## Iterative Retraining Workflow
+
 ```
-  - `-d`: Your detection dataset.
-  - `-o`: Output directory for YOLO results.
-  - `-n`: Number of classes.
-  - `-y`: Path to the `data.yaml` file.
-  - `-p`: Project directory.
-  - `-r`: Name for the specific run.
+1. collect_training_from_video.py  →  review/ crops
+2. Manually sort crops by species
+3. build_species_gallery.py        →  updated gallery
+4. prepare_detector_dataset.py     →  YOLO dataset
+5. yolo train data=...             →  new model.pt
+6. Evaluate and repeat
+```
 
 ---
 
-## 📂 Key Project Files
+## Models
 
-Here's a breakdown of the most important scripts and modules in this project.
-
-### Training Scripts
-  * [`train_scripts/classification/auto_train_cross.py`](train_scripts/classification/auto_train_cross.py): Automatically trains a classification model using the cross-entropy loss function. It saves the best-performing checkpoint based on validation accuracy.
-  * [`train_scripts/classification/auto_train_triplet.py`](train_scripts/classification/auto_train_triplet.py): Trains a classification model using Triplet or Quadruplet loss. It saves the best checkpoint based on the k-metric on the validation set.
-  * [`train_scripts/segmentation/train.py`](train_scripts/segmentation/train.py): A basic script to train a segmentation model using the Detectron2 API.
-  * [`train_scripts/segmentation/train_copy_paste.py`](train_scripts/segmentation/train_copy_paste.py): Trains a segmentation model using Detectron2 with the "Copy-Paste" data augmentation technique.
-
-### Helper Notebooks & Scripts
-  * [`helper/ExportModelToTorchscript.ipynb`](helper/ExportModelToTorchscript.ipynb): A Jupyter Notebook to convert PyTorch classification models and Detectron2 segmentation models to the TorchScript format for optimized deployment.
-  * [`helper/classification/CreateDataBaseTensor.py`](helper/classification/CreateDataBaseTensor.py): Generates an embedding tensor from a trained classification network. This tensor is used for efficient inference.
-  * [`helper/classification/CreateDatasetAndTrain.ipynb`](helper/classification/CreateDatasetAndTrain.ipynb): A script to create training/testing datasets from a Fishial COCO export and subsequently train a network.
-  * [`helper/classification/EmbeddingViewer.py`](helper/classification/EmbeddingViewer.py): Jupyter-based interactive 3D embedding space explorer. Generates the standalone HTML viewer above.
-
-### Core Modules
-  * [`module/classification_package/src/model.py`](module/classification_package/src/model.py) & [`utils.py`](module/classification_package/src/utils.py): Core implementation of the classification pipeline.
+| File | Description |
+|---|---|
+| `model.pt` | Current YOLO detector (mAP50=0.897, fine-tuned on Karasjohka+Anarjohka) |
+| `classification_model/model.ts` | TorchScript ArcFace backbone (108 MB, input 154×434) |
+| `model_backups/` | Previous detector checkpoints |
 
 ---
 
-## 🧭 What's Inside
+## Directory Structure
 
-The repository combines segmentation, detection, and classification tooling with helper notebooks and export utilities:
-
-- **Segmentation pipelines**: Detectron2-based training scripts, augmentations, and export helpers.
-- **Object detection**: YOLO training, validation, and inference helpers focused on bounding-box detection.
-- **Classification**: Cross-entropy and metric-based training scripts plus inference helpers that produce class embeddings.
-- **Helpers & notebooks**: Utility notebooks, embedding database tools, and TorchScript export utilities keep deployment workflows tidy.
-- **Embedding Viewer**: Interactive 3D browser tool for exploring model embedding space and species similarity.
-
----
-
-## 📊 Model Performance
-
-| Task | Model | Classes | Accuracy |
-|---|---|---|---|
-| Classification | DinoV2 + ViT (⭐ latest) | 866 | **93.22%** |
-| Classification | BEiTv2 | 775 | — |
-| Detection | YOLOv26 (⭐ latest) | — | — |
-| Segmentation | FPN + ResNet18 (⭐ latest) | — | — |
-
----
-
-## 📦 Pre-trained Models
-
-The following checkpoints are organized by task. TorchScript-ready artifacts are highlighted when available.
-
-### Detection
-
-| Model | Notes | Download |
-| --- | --- | --- |
-| **⭐ YOLO v26 Fish Detector** | TorchScript; latest export | [download](https://storage.googleapis.com/fishial-ml-resources/detector_v26_n3.zip) |
-| YOLOv12 Medium Fish Detector | TorchScript; previous medium-sized detector | [download](https://storage.googleapis.com/fishial-ml-resources/detector_v10_m5.zip) |
-| YOLOv10 Medium Fish Detector | TorchScript; earlier balanced model | [download](https://storage.googleapis.com/fishial-ml-resources/detector_v10_m3.zip) |
-
-### Classification
-
-| Model | Notes | Download |
-| --- | --- | --- |
-| **⭐ DinoV2-224 + ViT Pooling 3 head, subcenter (866 classes)** | Embedding size 768; TorchScript export | [download](https://storage.googleapis.com/fishial-ml-resources/classification_model_v0.10.2.zip) |
-| beitv2_base_patch16_224 (775 classes) | Embedding size 512; TorchScript export | [download](https://storage.googleapis.com/fishial-ml-resources/classification_model_v0.10.zip) |
-| beitv2_base_patch16_224 (640 classes) | Embedding 512; previous TorchScript pack | [download](https://storage.googleapis.com/fishial-ml-resources/classification_rectangle_v9-3.zip) |
-| ConvNeXt Tiny (640 classes) | Embedding 256; TorchScript | [download](https://storage.googleapis.com/fishial-ml-resources/classification_rectangle_v9-2.zip) |
-| ConvNeXt Tiny (426 classes) | Embedding 128; TorchScript | [download](https://storage.googleapis.com/fishial-ml-resources/classification_rectangle_v7-1.zip) |
-| ResNet18 v6 model pack (289 classes) | ResNet-based classifier bundle | [download](https://storage.googleapis.com/fishial-ml-resources/classification_fishial_30_06_2023.zip) |
-| ResNet18 v5 model pack (184 classes) | Legacy ResNet18 set | [download](https://storage.googleapis.com/fishial-ml-resources/classification_22_12.zip) |
-| ResNet18 v4 model pack (184 classes) | Early ResNet18 release | [download](https://storage.googleapis.com/fishial-ml-resources/classification_v5.zip) |
-| ResNet18 DataBase Tensor | Embedding tensor from train+test | [download](https://storage.googleapis.com/fishial-ml-resources/models_29.06.2022/train%2Btest_embedding.pt) |
-| ResNet18 Embedding 256 V2.0 | Full embedding checkpoint | [download](https://storage.googleapis.com/fishial-ml-resources/models_29.06.2022/full_256.ckpt) |
-| ResNet18 Binary Classification | Binary ResNet18 checkpoint | [download](https://storage.cloud.google.com/fishial-ml-resources/binary_class.ckpt) |
-| ResNet18 Cross Entropy V1.0 | High-accuracy ResNet18 checkpoint | [download](https://storage.googleapis.com/fishial-ml-resources/final_cross_cross_entropy_0.9923599320882852_258571.0.ckpt) |
-
-### Segmentation
-
-| Model | Notes | Download |
-| --- | --- | --- |
-| **⭐ FPN w/ ResNet18 (segmentation)** | TorchScript-ready backbone (img size 416) | [download](https://storage.googleapis.com/fishial-ml-resources/segmentator_fpn_res18_416_1.zip) |
-| MaskRCNN Fish Segmentation (Updated 21.08.2023) | Detectron2 checkpoint | [download](https://storage.googleapis.com/fishial-ml-resources/model_21_08_2023.pth) |
-| MaskRCNN Fish Segmentation (Updated 21.08.2023, TorchScript) | TorchScript export | [download](https://storage.googleapis.com/fishial-ml-resources/segmentation_21_08_2023.ts) |
-| MaskRCNN Fish Segmentation (Updated 15.11.2022) | Older Detectron2 checkpoint | [download](https://storage.googleapis.com/fishial-ml-resources/model_15_11_2022.pth) |
-| MaskRCNN Fish Segmentation (Updated 29.06.2022) | Legacy checkpoint | [download](https://storage.googleapis.com/fishial-ml-resources/models_29.06.2022/model_0259999.pth) |
-
----
-
-### Classification Model Labels
-
-A JSON file containing the names of all fish classes recognized by the latest model can be found here: **[labels.json](labels.json)**.
-
----
-
-## 📜 License
-
-This project is licensed under the MIT License. See the [LICENSE](https://choosealicense.com/licenses/mit/) file for details.
+```
+scripts/                  Main pipeline scripts
+classification_model/     Classifier model and galleries
+module/                   Shared Python modules
+train_scripts/            Model training scripts
+helper/                   Utility notebooks and tools
+archive/                  Legacy scripts (kept for reference)
+annotation_data_Seavision_COCO/  Manual COCO annotations
+model_backups/            Old detector checkpoints
+```
