@@ -18,11 +18,49 @@ Camera footage is ~7 fps colour video at 1080×1920 from fixed underwater camera
 ## Quick Start
 
 ```bash
+git clone https://github.com/SDomaas/fish-identification.git
+cd fish-identification
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 ```
 
+Then get the model files (see below).
+
 ---
+
+## Getting the Model Files
+
+Model files are not stored in this repository. You need two files:
+
+| File | Size | Purpose |
+|---|---|---|
+| `model.pt` | ~42 MB | YOLO fish detector |
+| `classification_model/model.ts` | ~108 MB | ArcFace species classifier |
+
+### Option A — NINA staff (server access)
+
+Copy from the project server via scp:
+
+```bash
+scp <user>@t2lipvdiext01.nina.no:~/fish-identification/model.pt .
+scp <user>@t2lipvdiext01.nina.no:~/fish-identification/classification_model/model.ts classification_model/
+```
+
+Or rsync if you want everything at once:
+
+```bash
+rsync -av --include="*.pt" --include="*.ts" --exclude="venv/" \
+    <user>@t2lipvdiext01.nina.no:~/fish-identification/ .
+```
+
+### Option B — External users
+
+- **`classification_model/model.ts`**: Download from [Fishial.ai](https://www.fishial.ai). This is their ArcFace backbone model — contact them or check their [GitHub](https://github.com/fishial/fish-identification) for download instructions.
+- **`model.pt`**: This detector was fine-tuned on Norwegian river footage and is not publicly available. You can train your own using `scripts/prepare_detector_dataset.py` + standard YOLO training on your own data, or use the base YOLOv8 nano weights (`yolo26n.pt` in the repo) as a starting point.
+
+> The gallery files (`classification_model/gallery_*.pt`) are already included in the repository — no download needed.
+
+
 
 ## Scripts
 
@@ -120,15 +158,31 @@ After manually sorting crops in `review/`, mirrors that sorting into `detection_
 
 ---
 
-## Galleries
+### `scripts/bbox_editor.py`
+Browser-based interactive bounding box editor for YOLO `detection_frames/`. Use this to review, correct, add, or delete bounding boxes on frames and save changes back to `.txt` label files.
 
-| File | Species | Notes |
-|---|---|---|
-| `classification_model/gallery_full_side.pt` | 7 | Built from clean side-view crops — best quality |
-| `classification_model/gallery_partial.pt` | 8 | Includes Perca; partial/mixed views |
-| `classification_model/local_gallery.pt` | 8 | Earlier combined gallery |
+```bash
+python scripts/bbox_editor.py \
+    --images /data/.../training_crops/detection_frames \
+    --port 5000
+```
 
-**Use `gallery_full_side.pt`** for production runs. Switch to `gallery_partial.pt` if Perca detection is needed.
+Then open **http://localhost:5000** in your browser.
+
+**Controls:**
+
+| Action | How |
+|---|---|
+| Draw new box | Click and drag on empty area |
+| Select box | Click an existing box (turns yellow) |
+| Resize box | Drag the yellow corner handles |
+| Delete selected box | `Delete` / `Backspace` key or Delete button |
+| Clear all boxes | Clear all button |
+| Save labels | `Ctrl+S` or Save button — writes `.txt` YOLO label file |
+| Navigate images | `←` / `→` arrow keys or Prev/Next buttons |
+| Filter images | Dropdown: All / Unlabelled only / Labelled only |
+
+> Labels are saved in YOLO format (`0 cx cy w h` normalised) alongside the image files.
 
 ---
 
@@ -161,11 +215,55 @@ Currently in the gallery:
 
 ## Models
 
-| File | Description |
+> ⚠️ Model files are **not stored in this repository** (too large for GitHub). They are stored on the project server and must be copied manually into the repo folder before running the pipeline.
+
+### YOLO Detector — `model.pt`
+
+| Property | Value |
 |---|---|
-| `model.pt` | Current YOLO detector (mAP50=0.897, fine-tuned on Karasjohka+Anarjohka) |
-| `classification_model/model.ts` | TorchScript ArcFace backbone (108 MB, input 154×434) |
-| `model_backups/` | Previous detector checkpoints |
+| Architecture | YOLOv8 nano |
+| Input size | 640×640 |
+| mAP50 | 0.897 (best epoch 39/50) |
+| Training data | Karasjohka + Anarjohka underwater footage |
+| Classes | 1 (fish) |
+| File size | ~42 MB |
+
+**Server location:** `~/fish-identification/model.pt` (on `t2lipvdiext01`)  
+Previous checkpoints: `model_backups/`
+
+---
+
+### ArcFace Classifier — `classification_model/model.ts`
+
+| Property | Value |
+|---|---|
+| Format | TorchScript |
+| Architecture | ArcFace backbone (DinoV2/ViT-based) |
+| Input size | 154×434 px (H×W) |
+| Embedding dim | 512 |
+| File size | ~108 MB |
+| Source | [Fishial.ai](https://www.fishial.ai) |
+
+**Server location:** `~/fish-identification/classification_model/model.ts` (on `t2lipvdiext01`)
+
+This model is used as a frozen feature extractor. Species classification is done by comparing embeddings to a **gallery** of per-species centroids — no retraining of this model is needed to add new species.
+
+---
+
+### Galleries — `classification_model/*.pt`
+
+Galleries are small (~6 KB) and **are committed to the repository**.
+
+| File | Species | Notes |
+|---|---|---|
+| `gallery_full_side.pt` | 7 | Built from clean side-view crops — **recommended** |
+| `gallery_partial.pt` | 8 | Includes Perca; partial/mixed views |
+| `local_gallery.pt` | 8 | Earlier combined gallery |
+
+Rebuild a gallery any time using `scripts/build_species_gallery.py` after adding new sorted crops to the species library.
+
+**Species library location on server:**  
+`/data/P-Prosjekter/18200300_overvaking_av_laks_i_tanavassdraget/ARIS-data/2026/Karasjohka_video/training_crops/Species_library/`
 
 ---
 
@@ -178,6 +276,5 @@ module/                   Shared Python modules
 train_scripts/            Model training scripts
 helper/                   Utility notebooks and tools
 archive/                  Legacy scripts (kept for reference)
-annotation_data_Seavision_COCO/  Manual COCO annotations
 model_backups/            Old detector checkpoints
 ```
