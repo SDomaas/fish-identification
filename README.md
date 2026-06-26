@@ -166,19 +166,29 @@ Currently in the gallery:
 
 > ⚠️ Model files are **not stored in this repository** (too large for GitHub). They are stored on the project server and must be copied manually into the repo folder before running the pipeline.
 
-### YOLO Detector — `model.pt`
+### YOLO Detectors
+
+| File | mAP50 | Training data | Notes |
+|---|---|---|---|
+| `Tana_v0.1.pt` | **0.993** | Tana 2026 — hand-annotated detector dataset | Current best — use this |
+| `model.pt` | 0.897 | Karasjohka + Anarjohka auto-labelled footage | Previous model |
+
+#### Tana_v0.1.pt
 
 | Property | Value |
 |---|---|
 | Architecture | YOLOv8 nano |
 | Input size | 640×640 |
-| mAP50 | 0.897 (best epoch 39/50) |
-| Training data | Karasjohka + Anarjohka underwater footage |
+| mAP50 | 0.993 (epoch 50/50) |
+| mAP50-95 | 0.821 |
+| Precision | 0.987 |
+| Recall | 0.982 |
+| Training data | Hand-annotated Tana 2026 footage (1652 fish + 1877 negatives) |
+| Base weights | `model_backup_20260622.pt` (fine-tuned from original YOLO26n) |
 | Classes | 1 (fish) |
-| File size | ~42 MB |
+| Training time | ~3h 49min on NVIDIA T4 |
 
-**Server location:** `~/fish-identification/model.pt` (on `t2lipvdiext01`)  
-Previous checkpoints: `model_backups/`
+**Server location:** `~/fish-identification/Tana_v0.1.pt` (on `t2lipvdiext01`)
 
 ---
 
