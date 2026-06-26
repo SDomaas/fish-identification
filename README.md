@@ -103,20 +103,6 @@ The gallery is a `.pt` file with one centroid per species. Flip augmentation is 
 
 ---
 
-### `scripts/prepare_detector_dataset.py`
-Builds a YOLO train/val dataset from manually sorted `detection_frames/` folders. Fish frames use saved `.txt` labels; background frames get empty labels.
-
-```bash
-python scripts/prepare_detector_dataset.py \
-    --detection-frames /data/.../training_crops/detection_frames \
-    --output /data/.../yolo_dataset \
-    --det-model model.pt
-```
-
-Supports multiple `--detection-frames` sources to combine data from different rivers.
-
----
-
 ### `scripts/mirror_sort_to_detection_frames.py`
 After manually sorting crops in `review/`, mirrors that sorting into `detection_frames/` (moves images and `.txt` label files to matching subfolders).
 
@@ -167,12 +153,11 @@ Currently in the gallery:
 ## Iterative Retraining Workflow
 
 ```
-1. collect_training_from_video.py  →  review/ crops
+1. collect_training_from_video.py  →  review/ crops + detection_frames/ with YOLO labels
 2. Manually sort crops by species
 3. build_species_gallery.py        →  updated gallery
-4. prepare_detector_dataset.py     →  YOLO dataset
-5. yolo train data=...             →  new model.pt
-6. Evaluate and repeat
+4. yolo train data=...             →  new model.pt
+5. Evaluate and repeat
 ```
 
 ---
