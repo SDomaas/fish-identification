@@ -24,43 +24,7 @@ python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Then get the model files (see below).
-
 ---
-
-## Getting the Model Files
-
-Model files are not stored in this repository. You need two files:
-
-| File | Size | Purpose |
-|---|---|---|
-| `model.pt` | ~42 MB | YOLO fish detector |
-| `classification_model/model.ts` | ~108 MB | ArcFace species classifier |
-
-### Option A — NINA staff (server access)
-
-Copy from the project server via scp:
-
-```bash
-scp <user>@t2lipvdiext01.nina.no:~/fish-identification/model.pt .
-scp <user>@t2lipvdiext01.nina.no:~/fish-identification/classification_model/model.ts classification_model/
-```
-
-Or rsync if you want everything at once:
-
-```bash
-rsync -av --include="*.pt" --include="*.ts" --exclude="venv/" \
-    <user>@t2lipvdiext01.nina.no:~/fish-identification/ .
-```
-
-### Option B — External users
-
-- **`classification_model/model.ts`**: Download from [Fishial.ai](https://www.fishial.ai). This is their ArcFace backbone model — contact them or check their [GitHub](https://github.com/fishial/fish-identification) for download instructions.
-- **`model.pt`**: This detector was fine-tuned on Norwegian river footage and is not publicly available. You can train your own using `scripts/prepare_detector_dataset.py` + standard YOLO training on your own data, or use the base YOLOv8 nano weights (`yolo26n.pt` in the repo) as a starting point.
-
-> The gallery files (`classification_model/gallery_*.pt`) are already included in the repository — no download needed.
-
-
 
 ## Scripts
 
