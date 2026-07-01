@@ -170,8 +170,26 @@ Currently in the gallery:
 
 | File | mAP50 | Training data | Notes |
 |---|---|---|---|
-| `Tana_v0.1.pt` | **0.993** | Tana 2026 — hand-annotated detector dataset | Current best — use this |
-| `model.pt` | 0.897 | Karasjohka + Anarjohka auto-labelled footage | Previous model |
+| `Tana_v0.2.pt` | **0.993** | Tana 2026 — hand-annotated, both rivers | Current best — use this |
+| `Tana_v0.1.pt` | 0.993 | Tana 2026 — hand-annotated, Karasjohka only | Previous version |
+| `model.pt` | 0.897 | Karasjohka + Anarjohka auto-labelled footage | Legacy |
+
+#### Tana_v0.2.pt
+
+| Property | Value |
+|---|---|
+| Architecture | YOLOv8 nano |
+| Input size | 640×640 |
+| mAP50 | 0.993 (epoch 50/50) |
+| mAP50-95 | 0.808 |
+| Precision | 0.991 |
+| Recall | 0.972 |
+| Training data | Hand-annotated Tana 2026 footage (1214 fish + 6346 negatives, Karasjohka + Anarjohka) |
+| Base weights | `model_backup_20260622.pt` (fine-tuned from original YOLO26n) |
+| Classes | 1 (fish) |
+| Dataset size | 7560 total (6048 train / 1512 val) |
+
+**Server location:** `~/fish-identification/Tana_v0.2.pt` (on `t2lipvdiext01`)
 
 #### Tana_v0.1.pt
 

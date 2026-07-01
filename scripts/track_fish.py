@@ -24,7 +24,7 @@ find /data/P-Prosjekter/18200300_overvaking_av_laks_i_tanavassdraget/ARIS-data/2
 
 python scripts/track_fish.py \
     --videos $(cat video_list.txt) \
-    --det-model model.pt \
+    --det-model Tana_v0.2.pt \
     --cls-model classification_model/model.ts \
     --cls-gallery classification_model/gallery_full_side.pt \
     --cls-method natural_centroid \
@@ -188,13 +188,18 @@ def build_output_stem(species: str, video_datetime: str | None, camera_id: str,
 # ---------------------------------------------------------------------------
 
 def save_track_outputs(track: dict, video_path: Path, fps: float,
-                       buffer_seconds: float, out_dir: Path,
+                       buffer_seconds: float, min_track_seconds: float,
+                       out_dir: Path,
                        video_datetime: str | None, camera_id: str, location: str):
     """
     For a finished track: save best-crop PNG and a .mp4 clip with buffer.
-    The clip is extracted by re-reading the source video sequentially.
+    Tracks shorter than min_track_seconds are discarded as likely debris/noise.
     """
     if not track['frames']:
+        return
+
+    track_duration = (track['last_frame'] - track['first_frame']) / fps
+    if track_duration < min_track_seconds:
         return
 
     species = majority_species(track)
@@ -341,7 +346,7 @@ def process_video(video_path: Path, args, det_model, cls_engine, out_dir: Path):
         for finished in tracker.pop_finished():
             save_track_outputs(
                 finished, video_path, fps, args.buffer_seconds,
-                out_dir, video_datetime, camera_id, location,
+                args.min_track_seconds, out_dir, video_datetime, camera_id, location,
             )
 
         frame_idx += 1
@@ -354,7 +359,7 @@ def process_video(video_path: Path, args, det_model, cls_engine, out_dir: Path):
     for finished in tracker.finalize_all():
         save_track_outputs(
             finished, video_path, fps, args.buffer_seconds,
-            out_dir, video_datetime, camera_id, location,
+            args.min_track_seconds, out_dir, video_datetime, camera_id, location,
         )
 
 
@@ -381,6 +386,9 @@ def parse_args():
                    help="Minimum species classification confidence to record (default: 0.0).")
     p.add_argument("--track-max-gap", type=int, default=15,
                    help="Max frames a fish can disappear before its track closes (default: 15).")
+    p.add_argument("--min-track-seconds", type=float, default=1.0,
+                   help="Minimum track duration in seconds to save (default: 1.0). "
+                        "Shorter tracks are discarded as likely debris or false detections.")
     p.add_argument("--buffer-seconds", type=float, default=2.0,
                    help="Seconds of video to include before/after each track (default: 2.0).")
     p.add_argument("--min-crop-size", type=int, default=80,

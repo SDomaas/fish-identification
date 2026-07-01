@@ -57,6 +57,11 @@ button { padding: 5px 12px; border: none; border-radius: 4px; cursor: pointer; f
 #btnSave { background: #e94560; color: #fff; font-weight: bold; }
 #btnDelete { background: #555; color: #fff; }
 #btnClear { background: #333; color: #fff; }
+#btnDeleteFrame { background: #7b0000; color: #fff; }
+#btnFisk { background: #1a6b3a; color: #fff; font-weight: bold; }
+#btnIkkeFisk { background: #5a3e00; color: #fff; font-weight: bold; }
+.sorted-fisk { color: #6fcf97 !important; }
+.sorted-ikkefisk { color: #f2994a !important; }
 select { padding: 5px; border-radius: 4px; background: #0f3460; color: #eee; border: none; font-size: 13px; }
 #imgLabel { font-size: 12px; color: #a0c4ff; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 #counter { font-size: 12px; color: #aaa; }
@@ -80,6 +85,9 @@ canvas { cursor: crosshair; display: block; }
   <button id="btnSave">💾 Save (Ctrl+S)</button>
   <button id="btnDelete">🗑 Delete box</button>
   <button id="btnClear">✖ Clear all</button>
+  <button id="btnDeleteFrame">🗑 Delete frame</button>
+  <button id="btnFisk">🐟 Fisk (F)</button>
+  <button id="btnIkkeFisk">✖ Ikke fisk (I)</button>
   <select id="filterSel">
     <option value="all">All images</option>
     <option value="unlabelled">Unlabelled only</option>
@@ -93,7 +101,7 @@ canvas { cursor: crosshair; display: block; }
   <div id="sidebar"></div>
   <div id="canvasWrap"><canvas id="c"></canvas></div>
 </div>
-<div id="info">Draw: drag | Select: click box | Delete: Del key | Save: Ctrl+S</div>
+<div id="info">Draw: drag | Select: click box | Delete: Del | Save: Ctrl+S | Sort: F = fisk, I = ikke fisk</div>
 
 <script>
 const canvas = document.getElementById('c');
@@ -292,6 +300,52 @@ function deleteSelected() {
 document.getElementById('btnSave').addEventListener('click', saveBoxes);
 document.getElementById('btnDelete').addEventListener('click', deleteSelected);
 document.getElementById('btnClear').addEventListener('click', () => { boxes = []; selectedBox = -1; dirty = true; draw(); });
+document.getElementById('btnDeleteFrame').addEventListener('click', async () => {
+  const name = filteredImages[currentIdx];
+  if (!confirm(`Delete image and labels for:\n${name}?`)) return;
+  await fetch('/api/frame/' + encodeURIComponent(name), { method: 'DELETE' });
+  filteredImages.splice(currentIdx, 1);
+  dirty = false;
+  if (filteredImages.length === 0) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    document.getElementById('imgLabel').textContent = 'No images';
+    document.getElementById('sidebar').innerHTML = '';
+    return;
+  }
+  currentIdx = Math.min(currentIdx, filteredImages.length - 1);
+  loadImage(filteredImages[currentIdx]);
+});
+
+async function sortFrame(folder) {
+  if (dirty) await saveBoxes();
+  const name = filteredImages[currentIdx];
+  const res = await fetch('/api/sort/' + encodeURIComponent(name), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ folder }),
+  });
+  const data = await res.json();
+  if (!data.ok) { setStatus('Sort failed', '#e94560'); return; }
+  setStatus(`→ ${folder}`, folder === 'fisk' ? '#6fcf97' : '#f2994a');
+  // Update sidebar item colour and advance
+  const sideItems = document.getElementById('sidebar').children;
+  if (sideItems[currentIdx]) {
+    sideItems[currentIdx].className = folder === 'fisk' ? 'sorted-fisk' : 'sorted-ikkefisk';
+  }
+  filteredImages.splice(currentIdx, 1);
+  dirty = false;
+  if (filteredImages.length === 0) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    document.getElementById('imgLabel').textContent = 'No images';
+    document.getElementById('sidebar').innerHTML = '';
+    return;
+  }
+  currentIdx = Math.min(currentIdx, filteredImages.length - 1);
+  loadImage(filteredImages[currentIdx]);
+}
+
+document.getElementById('btnFisk').addEventListener('click', () => sortFrame('fisk'));
+document.getElementById('btnIkkeFisk').addEventListener('click', () => sortFrame('ikke_fisk'));
 document.getElementById('btnPrev').addEventListener('click', () => {
   if (currentIdx > 0) { currentIdx--; loadImage(filteredImages[currentIdx]); }
 });
@@ -305,6 +359,8 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Delete' || e.key === 'Backspace') deleteSelected();
   if (e.key === 'ArrowRight') document.getElementById('btnNext').click();
   if (e.key === 'ArrowLeft') document.getElementById('btnPrev').click();
+  if (e.key === 'f' || e.key === 'F') sortFrame('fisk');
+  if (e.key === 'i' || e.key === 'I') sortFrame('ikke_fisk');
 });
 
 loadImageList();
@@ -331,6 +387,32 @@ def list_images():
     elif filter_mode == "labelled":
         images = [n for n in images if _has_labels(n)]
     return jsonify(images)
+
+
+@app.route("/api/sort/<name>", methods=["POST"])
+def sort_frame(name):
+    data = request.get_json()
+    folder = data.get("folder", "").strip()
+    if folder not in ("fisk", "ikke_fisk"):
+        return jsonify({"ok": False, "error": "Invalid folder"}), 400
+    dst_dir = IMAGES_DIR / folder
+    dst_dir.mkdir(exist_ok=True)
+    for suffix in (Path(name).suffix, ".txt"):
+        src = IMAGES_DIR / (Path(name).stem + suffix)
+        if src.exists():
+            src.rename(dst_dir / src.name)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/frame/<name>", methods=["DELETE"])
+def delete_frame(name):
+    img_path = IMAGES_DIR / name
+    txt_path = IMAGES_DIR / (Path(name).stem + ".txt")
+    if img_path.exists():
+        img_path.unlink()
+    if txt_path.exists():
+        txt_path.unlink()
+    return jsonify({"ok": True})
 
 
 def _has_labels(name: str) -> bool:

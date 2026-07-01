@@ -21,15 +21,15 @@ Selection of files - etter utsett
 find /data/P-Prosjekter/18200300_overvaking_av_laks_i_tanavassdraget/ARIS-data/2026/Anarjohka_video \
   -type f \
   -name "*.mp4" \
-  -newermt "2026-05-31" \
+  -newermt "2026-0506-15" \
   > video_list.txt
 
 #per camera YOLO threshold 
 python scripts/collect_training_from_video.py \
     --videos $(cat video_list.txt) \
-    --det-model model.pt \
+    --det-model Tana_v0.2.pt \
     --cls-model classification_model/model.ts \
-    --cls-gallery classification_model/local_gallery.pt \
+    --cls-gallery classification_model/gallery_full_side.pt \
     --cls-method natural_centroid \
     --output /data/P-Prosjekter/18200300_overvaking_av_laks_i_tanavassdraget/ARIS-data/2026/Anarjohka_video/training_crops \
     --frame-interval 1.0 \
